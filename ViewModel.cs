@@ -31,13 +31,6 @@ namespace WpfProgressSpinner
             }
         }
 
-        private string _progressLabel = "Sample progress bar";
-        public string ProgressLabel
-        {
-            get { return _progressLabel; }
-            set { SetProperty(ref _progressLabel, value); }
-        }
-
         private Visibility _visibility = Visibility.Visible;
         public Visibility Visibility
         {
