@@ -198,17 +198,31 @@ namespace WpfProgressSpinner
                 var duration = TimeSpan.FromSeconds((0.625 * Math.Abs(currentRatio - 1.1)) + 0.8);
 
                 // Create a transition, based on the current value
-                PathGeometry enterAnimationPath = new PathGeometry();
-                PathFigure pFigure = new PathFigure { StartPoint = new Point(0, currentRatio) };
-                PolyBezierSegment pBezierSegment = new PolyBezierSegment();
-                pBezierSegment.Points.Add(new Point(0, 1.1));
-                pBezierSegment.Points.Add(new Point(0, 1.1));
-                pBezierSegment.Points.Add(new Point(1, 1.1));
-                pFigure.Segments.Add(pBezierSegment);
-                enterAnimationPath.Figures.Add(pFigure);
+                PathGeometry enterAnimationPath = new PathGeometry{
+                    Figures = new PathFigureCollection
+                    {
+                        new PathFigure
+                        {
+                            StartPoint = new Point(0, currentRatio),
+                            Segments = new PathSegmentCollection
+                            {
+                                new PolyBezierSegment
+                                {
+                                    Points = new PointCollection
+                                    {
+                                        new Point(0, 1.1),
+                                        new Point(0, 1.1),
+                                        new Point(1, 1.1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
                 enterAnimationPath.Freeze();
 
-                PointAnimationUsingPath enterSpinAnimation = new PointAnimationUsingPath{
+                PointAnimationUsingPath enterSpinAnimation = new PointAnimationUsingPath
+                {
                     PathGeometry = enterAnimationPath,
                     Duration = duration,
                     AccelerationRatio = 0.4,
@@ -245,8 +259,8 @@ namespace WpfProgressSpinner
                 {
                     From = currentAngle,
                     To = 0,
-                    Duration = TimeSpan.FromSeconds(currentAngle * -0.008),
-                    EasingFunction = new SineEase{ EasingMode = EasingMode.EaseOut },
+                    Duration = TimeSpan.FromSeconds(currentAngle * -0.006),
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut },
                     SpeedRatio = AnimationSpeedRatio
                 };
                 exitRotateAnimation.Freeze();
@@ -329,13 +343,31 @@ namespace WpfProgressSpinner
 
                 // Create a transition to animate the indicator to current value
                 AnimationTimeline exitSpinAnimation;
-                if (ProgressRatio < 0.1) // If ProgressRatio is less than 0.1, one additional spin animation is performed
+                if (targetRatio < 0.1) // If ProgressRatio is less than 0.1, one additional spin animation is performed
                 {
-                    PathGeometry exitSpinAnimationPath = new PathGeometry();
-                    PathFigure pFigure = new PathFigure { StartPoint = new Point(0, 0.1) };
-                    pFigure.Segments.Add(new LineSegment(new Point(0, targetRatio + 0.9), true));
-                    pFigure.Segments.Add(new LineSegment(new Point(1.0, targetRatio + 1.0), true));
-                    exitSpinAnimationPath.Figures.Add(pFigure);
+                    PathGeometry exitSpinAnimationPath = new PathGeometry
+                    {
+                        Figures = new PathFigureCollection
+                        {
+                            new PathFigure
+                            {
+                                StartPoint = new Point(0, 0.1),
+                                Segments = new PathSegmentCollection
+                                {
+                                    new PolyQuadraticBezierSegment
+                                    {
+                                        Points = new PointCollection
+                                        {
+                                            new Point(0, targetRatio + 0.8),
+                                            new Point(0.1, targetRatio + 0.85),
+                                            new Point(0.9, targetRatio + 0.95),
+                                            new Point(1.0, targetRatio + 1.0)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
                     exitSpinAnimationPath.Freeze();
                     exitSpinAnimation = new PointAnimationUsingPath
                     {
@@ -361,23 +393,34 @@ namespace WpfProgressSpinner
 
                 exitSpinAnimation.Completed += (s, _) => {
                     if (!IsIndeterminate)
+                    {
                         _transitionAnimationRunning = false;
-
-                    if (Value != SmoothValue)
-                        BeginValueAnimation(SmoothValue);
+                        if (Value != SmoothValue)
+                            BeginSmoothValueAnimation(SmoothValue);
+                    }
                 };
                 exitSpinAnimation.Freeze();
                 BeginAnimation(IndeterminateAnimatorProperty, exitSpinAnimation, HandoffBehavior.SnapshotAndReplace);
             }
         }
 
-        private void BeginValueAnimation(double value)
+        private void BeginSmoothValueAnimation(double value)
         {
-            var anim = new DoubleAnimation(value, TimeSpan.FromMilliseconds(500));
-
             if (!RunningTransitionAnimation)
             {
-                BeginAnimation(ValueProperty, anim, HandoffBehavior.SnapshotAndReplace);
+                if (IsIndeterminate)
+                {
+                    SetCurrentValue(ValueProperty, value);
+                }
+                else
+                {
+                    var valueAnimation = new DoubleAnimation
+                    {
+                        To = value,
+                        Duration = TimeSpan.FromMilliseconds(500),
+                    };
+                    BeginAnimation(ValueProperty, valueAnimation, HandoffBehavior.SnapshotAndReplace);
+                }
             }
         }
 
@@ -540,7 +583,7 @@ namespace WpfProgressSpinner
         public static readonly DependencyProperty SmoothValueProperty =
             DependencyProperty.Register("SmoothValue",
                 typeof(double), typeof(ProgressSpinner), new PropertyMetadata(
-                    (d, e) => { ((ProgressSpinner)d).BeginValueAnimation((double)e.NewValue); }));
+                    (d, e) => { ((ProgressSpinner)d).BeginSmoothValueAnimation((double)e.NewValue); }));
 
         private Point IndeterminateAnimator
         {

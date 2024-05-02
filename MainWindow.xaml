@@ -30,8 +30,7 @@
             <Rectangle StrokeDashArray="4.0 4.0"  
                        Stroke="#50808080"  
                        StrokeThickness="1"  
-                       Width="{Binding ActualWidth, ElementName=Spinner}" Height="{Binding ActualHeight, ElementName=Spinner}">
-            </Rectangle>
+                       Width="{Binding ActualWidth, ElementName=Spinner}" Height="{Binding ActualHeight, ElementName=Spinner}"/>
             <local:ProgressSpinner
                 x:Name="Spinner"
                 Width="100"
