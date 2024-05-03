@@ -615,7 +615,6 @@ namespace WpfProgressSpinner
         #endregion Dependency properties
 
 
-
         #region Converters
 
         private sealed class IndicatorConverter : IMultiValueConverter
@@ -625,16 +624,27 @@ namespace WpfProgressSpinner
             {
                 double actualWidth = (double)values[0];
                 double strokeThickness = (double)values[1];
-
-                double startAngleRatio = ((Point)values[2]).X;
-                double endAngleRatio = ((Point)values[2]).Y;
-
+                double ratio0 = ((Point)values[2]).X;
+                double ratio1 = ((Point)values[2]).Y;
                 double rotateOffset = (double)values[3];
+
+                double startAngleRatio;
+                double endAngleRatio;
+                if (ratio0 < ratio1)
+                {
+                    startAngleRatio = ratio0;
+                    endAngleRatio = ratio1;
+                }
+                else
+                {
+                    startAngleRatio = ratio1;
+                    endAngleRatio = ratio0;
+                }
 
                 double radius;
                 if (actualWidth > strokeThickness)
                 {
-                    radius = (actualWidth - strokeThickness) / 2.0;
+                    radius = (actualWidth - strokeThickness) / 2;
                 }
                 else
                 {
@@ -647,18 +657,11 @@ namespace WpfProgressSpinner
                 double startRadians = startAngleRatio * Math.PI * 2 + offsetRadians;
                 double endRadians = endAngleRatio * Math.PI * 2 + offsetRadians;
 
-                double trisectRadians = (endRadians - startRadians) / 3;
-                double mid1Radians = trisectRadians + startRadians;
-                double mid2Radians = 2 * trisectRadians + startRadians;
+                int midpointCount = (int)((endRadians - startRadians) / (0.5 * Math.PI * 2)) + 1;
+                double midpointRadians = (endRadians - startRadians) / midpointCount;
 
                 double startX = radius * Math.Sin(startRadians) + positionOffset;
                 double startY = -radius * Math.Cos(startRadians) + positionOffset;
-
-                double mid1X = radius * Math.Sin(mid1Radians) + positionOffset;
-                double mid1Y = -radius * Math.Cos(mid1Radians) + positionOffset;
-
-                double mid2X = radius * Math.Sin(mid2Radians) + positionOffset;
-                double mid2Y = -radius * Math.Cos(mid2Radians) + positionOffset;
 
                 double endX = radius * Math.Sin(endRadians) + positionOffset;
                 double endY = -radius * Math.Cos(endRadians) + positionOffset;
@@ -667,8 +670,12 @@ namespace WpfProgressSpinner
                 using (StreamGeometryContext ctx = geometry.Open())
                 {
                     ctx.BeginFigure(new Point(startX, startY), false, false);
-                    ctx.ArcTo(new Point(mid1X, mid1Y), new Size(radius, radius) ,0.0 , false, SweepDirection.Clockwise, true, false);
-                    ctx.ArcTo(new Point(mid2X, mid2Y), new Size(radius, radius), 0.0, false, SweepDirection.Clockwise, true, false);
+                    for (int i = 1;i < midpointCount; i++)
+                    {
+                        double midX = radius * Math.Sin(midpointRadians * i + startRadians) + positionOffset;
+                        double midY = -radius * Math.Cos(midpointRadians * i + startRadians) + positionOffset;
+                        ctx.ArcTo(new Point(midX, midY), new Size(radius, radius), 0.0, false, SweepDirection.Clockwise, true, false);
+                    }
                     ctx.ArcTo(new Point(endX, endY), new Size(radius, radius), 0.0, false, SweepDirection.Clockwise, true, false);
                 }
                 geometry.Freeze();
