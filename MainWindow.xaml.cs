@@ -40,11 +40,14 @@ namespace WpfProgressSpinner
             {
                 switch (vm.ProgressState)
                 {
-                    case ProgressState.Normal:
+                    case ProgressState.None:
                         vm.ProgressState = ProgressState.Indeterminate;
                         break;
-                    default:
+                    case ProgressState.Indeterminate:
                         vm.ProgressState = ProgressState.Normal;
+                        break;
+                    default:
+                        vm.ProgressState = ProgressState.None;
                         break;
                 }
             }

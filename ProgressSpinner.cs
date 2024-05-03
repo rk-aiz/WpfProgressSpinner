@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -34,7 +35,7 @@ namespace WpfProgressSpinner
 
         private const string TrackTemplateName = "PART_Track";
         private const string IndicatorTemplateName = "PART_Indicator";
-        private static ProgressState _defaultState = ProgressState.Indeterminate;
+        private static ProgressState _defaultState = ProgressState.None;
 
         //private RotateTransform _indicatorRotation;
 
@@ -81,7 +82,7 @@ namespace WpfProgressSpinner
 
             StyleProperty.OverrideMetadata(typeof(ProgressSpinner), new FrameworkPropertyMetadata(CreateStyle()));
 
-            // Create a PathGeometry for PointAnimationgUsingPath
+            // Create a [PathGeometry] for [PointAnimationgUsingPath]
             // It is the base curve for the spinner arc animation calculations.
             _spinAnimationPath = PathGeometry.CreateFromGeometry(
                 Geometry.Parse("M 0 0.1 L 0 0.65 C 0.001 0.898 0.126 0.927 0.247 0.954 C 0.394 0.988 0.43 0.995 0.61 1.038 C 0.719 1.062 0.846 1.101 1 1.1")
@@ -105,10 +106,9 @@ namespace WpfProgressSpinner
                 AccelerationRatio = 0.2,
                 DecelerationRatio = 0.4,
             };
-
-            //Timeline.SetDesiredFrameRate(_spinAnimation, 60);
             BindingOperations.SetBinding(_spinAnimation, Timeline.SpeedRatioProperty, animationSpeedBinding);
             _spinAnimation.Completed += SpinAnimation_Completed;
+            //Timeline.SetDesiredFrameRate(_spinAnimation, 60);
 
             // RotateTransform Animation
             _rotateAnimation = new DoubleAnimation
@@ -117,12 +117,12 @@ namespace WpfProgressSpinner
                 To = 360,
                 Duration = TimeSpan.FromSeconds(3),
             };
-            
-            //Timeline.SetDesiredFrameRate(_rotateAnimation, 60);
             BindingOperations.SetBinding(_rotateAnimation, Timeline.SpeedRatioProperty, animationSpeedBinding);
             _rotateAnimation.Completed += RotateAnimation_Completed;
+            //Timeline.SetDesiredFrameRate(_rotateAnimation, 60);
 
-            Loaded += (s, e) => {
+            Loaded += (s, e) =>
+            {
                 UpdateIndicator();
                 UpdateAnimation();
             };
@@ -281,7 +281,7 @@ namespace WpfProgressSpinner
                 _transitionAnimationRunning = true;
                 var targetRatio = ProgressRatio;
 
-                // Create a transition to animate the indicator to current value
+                // Create a transition of animate the indicator to current value
                 AnimationTimeline exitSpinAnimation;
                 if (targetRatio < 0.1) // If ProgressRatio is less than 0.1, one additional spin animation is performed
                 {
@@ -368,9 +368,22 @@ namespace WpfProgressSpinner
         {
             ProgressSpinner source = (ProgressSpinner)d;
 
-            // Set [IsIndeterminate] dependency property
-            source.SetValue(IsIndeterminatePropertyKey, (ProgressState)e.NewValue == ProgressState.Indeterminate);
+            var currentState = (ProgressState)e.NewValue;
 
+            // Set [IsIndeterminate] dependency property
+            source.SetValue(IsIndeterminatePropertyKey, ProgressState.Indeterminate == currentState);
+
+            var isNoProgress = ProgressState.None == currentState;
+            source.SetValue(IsNoProgressPropertyKey, isNoProgress);
+
+            if (source._indicator != null)
+            {
+                if (isNoProgress)
+                    source._indicator.Visibility = Visibility.Collapsed;
+                else
+                    source._indicator.Visibility = Visibility.Visible;
+            }
+                
             // Switch the required animation state according to changes in [ProgressState]
             source.UpdateAnimation();
         }
@@ -422,38 +435,28 @@ namespace WpfProgressSpinner
         }
 
         // Create a host visual derived from the FrameworkElement class.
-        // This class provides only drawing geometry function.
+        // This class for using [DrawingVisual]
         private sealed class DrawingVisualHost : FrameworkElement
         {
             public static readonly DependencyProperty GeometryProperty =
                 DependencyProperty.Register("Geometry", typeof(Geometry), typeof(DrawingVisualHost),
-                    new FrameworkPropertyMetadata(new StreamGeometry(), (d, e) =>
-                    {
-                        ((DrawingVisualHost)d).Render();
-                    }));
+                    new FrameworkPropertyMetadata(new StreamGeometry()));
 
             public static readonly DependencyProperty PenProperty =
                 DependencyProperty.Register("Pen", typeof(Pen), typeof(DrawingVisualHost),
-                    new FrameworkPropertyMetadata(new Pen(), (d, e) =>
-                    {
-                        ((DrawingVisualHost)d).Render();
-                    }));
+                    new FrameworkPropertyMetadata(new Pen()));
 
             private DrawingVisual _drawing;
-            private VisualCollection _children;
 
             public DrawingVisualHost()
             {
-                _children = new VisualCollection(this) { 
-                    Capacity = 1,
-                };
-
                 _drawing = new DrawingVisual();
-                _children.Add(_drawing);
+                AddVisualChild(_drawing);
             }
 
-            private void Render()
+            protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
             {
+                base.OnPropertyChanged(e);
                 using (DrawingContext context = _drawing.RenderOpen())
                 {
                     context.DrawGeometry(null, (Pen)GetValue(PenProperty), (Geometry)GetValue(GeometryProperty));
@@ -462,17 +465,16 @@ namespace WpfProgressSpinner
 
             protected override int VisualChildrenCount
             {
-                get { return _children.Count; }
+                get { return 1; }
             }
 
             protected override Visual GetVisualChild(int index)
             {
-                if (index < 0 || index >= _children.Count)
+                /*if (index != 1)
                 {
                     throw new ArgumentOutOfRangeException();
-                }
-
-                return _children[index];
+                }*/
+                return _drawing;
             }
         }
 
@@ -532,6 +534,15 @@ namespace WpfProgressSpinner
             DependencyProperty.RegisterReadOnly("IsIndeterminate", typeof(bool),
                     typeof(ProgressSpinner), new FrameworkPropertyMetadata(_defaultState == ProgressState.Indeterminate));
 
+        public bool IsNoProgress
+        {
+            get { return (bool)GetValue(IsNoProgressPropertyKey.DependencyProperty); }
+        }
+
+        private static readonly DependencyPropertyKey IsNoProgressPropertyKey =
+            DependencyProperty.RegisterReadOnly("IsNoProgress", typeof(bool),
+                    typeof(ProgressSpinner), new FrameworkPropertyMetadata(_defaultState == ProgressState.None));
+
         public double AnimationSpeedRatio
         {
             get { return (double)GetValue(AnimationSpeedRatioProperty); }
@@ -582,6 +593,16 @@ namespace WpfProgressSpinner
             DependencyProperty.Register("SmoothValue",
                 typeof(double), typeof(ProgressSpinner), new PropertyMetadata(
                     (d, e) => { ((ProgressSpinner)d).BeginSmoothValueAnimation((double)e.NewValue); }));
+
+        public bool EnableOpenCloseAnimation
+        {
+            get { return (bool)GetValue(EnableOpenCloseAnimationProperty); }
+            set { SetValue(EnableOpenCloseAnimationProperty, value); }
+        }
+
+        public static readonly DependencyProperty EnableOpenCloseAnimationProperty =
+            DependencyProperty.Register("EnableOpenCloseAnimation",
+                typeof(bool), typeof(ProgressSpinner), new PropertyMetadata(true));
 
         /*** Private dependency properties ***/
 
