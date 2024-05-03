@@ -645,12 +645,13 @@ namespace WpfProgressSpinner
                 if (actualWidth > strokeThickness)
                 {
                     radius = (actualWidth - strokeThickness) / 2;
+                    
                 }
                 else
                 {
                     radius = 0.0;
                 }
-
+                Size size = new Size(radius, radius);
                 double positionOffset = actualWidth / 2;
 
                 double offsetRadians = rotateOffset / 360 * Math.PI * 2;
@@ -674,9 +675,9 @@ namespace WpfProgressSpinner
                     {
                         double midX = radius * Math.Sin(midpointRadians * i + startRadians) + positionOffset;
                         double midY = -radius * Math.Cos(midpointRadians * i + startRadians) + positionOffset;
-                        ctx.ArcTo(new Point(midX, midY), new Size(radius, radius), 0.0, false, SweepDirection.Clockwise, true, false);
+                        ctx.ArcTo(new Point(midX, midY), size, 0.0, false, SweepDirection.Clockwise, true, false);
                     }
-                    ctx.ArcTo(new Point(endX, endY), new Size(radius, radius), 0.0, false, SweepDirection.Clockwise, true, false);
+                    ctx.ArcTo(new Point(endX, endY), size, 0.0, false, SweepDirection.Clockwise, true, false);
                 }
                 geometry.Freeze();
                 return geometry;
