@@ -26,33 +26,51 @@
             <BooleanToVisibilityConverter x:Key="VisibilityConverter"/>
         </StackPanel.Resources>
 
-        <Grid Margin="50, 20" Width="400" Height="400">
-            <Rectangle StrokeDashArray="4.0 4.0"  
-                       Stroke="#50808080"  
-                       StrokeThickness="1"  
-                       Width="{Binding ActualWidth, ElementName=Spinner}" Height="{Binding ActualHeight, ElementName=Spinner}"/>
+        <Grid Margin="50, 20" Width="130" Height="130" 
+            RenderTransformOrigin="0.5, 0.5" TextBlock.FontFamily="Segoe UI Light" TextBlock.FontSize="17">
+            <Grid.RenderTransform>
+                <ScaleTransform ScaleX="{Binding CircleScale, ElementName=Spinner}" ScaleY="{Binding CircleScale, ElementName=Spinner}"/>
+            </Grid.RenderTransform>
+            <Grid.Resources>
+                <Style TargetType="{x:Type Grid}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CircleScale, ElementName=Spinner}" Value="0">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+                <Style TargetType="{x:Type TextBlock}">
+                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                    <Setter Property="Foreground" Value="#E0AFDCF9"/>
+                </Style>
+            </Grid.Resources>
+            <Rectangle
+                RadiusX="50" RadiusY="50"
+                Stroke="#50808080"
+                StrokeThickness="1"
+                Fill="#30000000">
+            </Rectangle>
             <local:ProgressSpinner
                 x:Name="Spinner"
                 Width="100"
+                CircleThickness="10"
                 Foreground="#FF30AAE0"
                 Background="#408050D0"
                 SmoothValue="{Binding Progress}"
                 Maximum="{Binding Maximum, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                 Minimum="{Binding Minimum, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                Visibility="{Binding Visibility}"
+                Visibility="{Binding Visibility, Mode=TwoWay}"
                 ProgressState="{Binding ProgressState}"
                 />
             <TextBlock
-                FontSize="15" Foreground="#E02E8CD9"
-                HorizontalAlignment="Center" VerticalAlignment="Center"
+                x:Name="ProgressText"
                 Visibility="{Binding IsIndeterminate, ElementName=Spinner, Converter={StaticResource InverseVisibilityConverter}}"
                 Text="{Binding Value, ElementName=Spinner, StringFormat={}{0:0}%}"
                 />
             <TextBlock
-                FontSize="15" Foreground="#E02E8CD9"
-                HorizontalAlignment="Center" VerticalAlignment="Center"
                 Visibility="{Binding IsIndeterminate, ElementName=Spinner, Converter={StaticResource VisibilityConverter}}"
-                Text="Loading..."
+                Text="Loading"
                 />
         </Grid>
         

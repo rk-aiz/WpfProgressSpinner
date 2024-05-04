@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -33,18 +34,24 @@ namespace WpfProgressSpinner
 
         #region Data
 
+        private const double ANIMATION_DURATION_BASIS = 1.35;
+
         private const string TrackTemplateName = "PART_Track";
         private const string IndicatorTemplateName = "PART_Indicator";
         private static ProgressState _defaultState = ProgressState.None;
 
         //private RotateTransform _indicatorRotation;
+        private ScaleTransform _scaleTransform = new ScaleTransform();
 
         private AnimationTimeline _spinAnimation;
         private AnimationTimeline _rotateAnimation;
 
+        private AnimationClock _rotateAnimationClock;
+        private AnimationClock _spinAnimationClock;
+
         private static PathGeometry _spinAnimationPath;
 
-        private FrameworkElement _track; // Currently not needed.
+        private FrameworkElement _track;
         private FrameworkElement _indicator;
 
         #endregion Data
@@ -102,11 +109,11 @@ namespace WpfProgressSpinner
             _spinAnimation = new PointAnimationUsingPath
             {
                 PathGeometry = _spinAnimationPath,
-                Duration = TimeSpan.FromSeconds(1.35),
+                Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS),
                 AccelerationRatio = 0.2,
                 DecelerationRatio = 0.4,
             };
-            BindingOperations.SetBinding(_spinAnimation, Timeline.SpeedRatioProperty, animationSpeedBinding);
+            //BindingOperations.SetBinding(_spinAnimation, Timeline.SpeedRatioProperty, animationSpeedBinding);
             _spinAnimation.Completed += SpinAnimation_Completed;
             //Timeline.SetDesiredFrameRate(_spinAnimation, 60);
 
@@ -117,7 +124,7 @@ namespace WpfProgressSpinner
                 To = 360,
                 Duration = TimeSpan.FromSeconds(3),
             };
-            BindingOperations.SetBinding(_rotateAnimation, Timeline.SpeedRatioProperty, animationSpeedBinding);
+            //BindingOperations.SetBinding(_rotateAnimation, Timeline.SpeedRatioProperty, animationSpeedBinding);
             _rotateAnimation.Completed += RotateAnimation_Completed;
             //Timeline.SetDesiredFrameRate(_rotateAnimation, 60);
 
@@ -164,16 +171,38 @@ namespace WpfProgressSpinner
             SetCurrentValue(IndicatorCompositorProperty, new Point(startPointRatio, endPointRatio));
         }
 
-
         private bool _indeterminateAnimationRunning = false;
         private bool _transitionAnimationRunning = false;
         private void UpdateAnimation()
         {
+            if (IsProgressNone)
+            {
+                if (_indicator != null)
+                {
+                    StopAnimation();
+                    _indicator.Visibility = Visibility.Collapsed;
+                }
+            }
+            else
+            {
+                if (_indicator != null)
+                    _indicator.Visibility = Visibility.Visible;
+            }
+
+            if (ProgressState == ProgressState.Normal || IsIndeterminate)
+            {
+                CheckOpenAnimation();
+            }
+            else if (ProgressState == ProgressState.Completed)
+            {
+                CheckCloseAnimatoin();
+            }
+
             if (IsIndeterminate)
             {
                 if (IsVisible && !_indeterminateAnimationRunning) {
                     var currentRatio = ProgressRatio;
-                    var duration = TimeSpan.FromSeconds((0.625 * Math.Abs(currentRatio - 1.1)) + 0.8);
+                    var enterDuration = TimeSpan.FromSeconds((ANIMATION_DURATION_BASIS / 2 * Math.Abs(currentRatio - 1.1)) + (ANIMATION_DURATION_BASIS / 2));
 
                     // Create a transition, based on the current value
                     PathGeometry enterAnimationPath = new PathGeometry {
@@ -202,7 +231,7 @@ namespace WpfProgressSpinner
                     PointAnimationUsingPath enterSpinAnimation = new PointAnimationUsingPath
                     {
                         PathGeometry = enterAnimationPath,
-                        Duration = duration,
+                        Duration = enterDuration,
                         AccelerationRatio = 0.4,
                         DecelerationRatio = 0.4,
                         SpeedRatio = AnimationSpeedRatio
@@ -210,21 +239,23 @@ namespace WpfProgressSpinner
 
                     enterSpinAnimation.Completed += SpinAnimation_Completed;
                     enterSpinAnimation.Freeze();
-                    BeginAnimation(IndeterminateAnimatorProperty, enterSpinAnimation, HandoffBehavior.SnapshotAndReplace);
+                    BeginIndicatorAnimation(IndeterminateAnimatorProperty, enterSpinAnimation, HandoffBehavior.SnapshotAndReplace);
 
                     // Create a transition to a continuous rotate animation
                     var enterRotateAnimation = new DoubleAnimation
                     {
                         To = 360,
-                        Duration = TimeSpan.FromSeconds(3 * Math.Abs((IndicatorRotate - 360) / 360) + 0.5),
+                        Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS * 3 * Math.Abs((IndicatorRotate - 360) / 360) + (ANIMATION_DURATION_BASIS / 2)),
                         EasingFunction = new PowerEase { EasingMode = EasingMode.EaseIn },
                         SpeedRatio = AnimationSpeedRatio
                     };
                     enterRotateAnimation.Completed += RotateAnimation_Completed;
-                    BeginAnimation(IndicatorRotateProperty, enterRotateAnimation);
+                    BeginIndicatorAnimation(IndicatorRotateProperty, enterRotateAnimation);
 
                     _transitionAnimationRunning = false;
                     _indeterminateAnimationRunning = true;
+
+                    CheckOpenAnimation();
                 }
             }
             else if (_indeterminateAnimationRunning)
@@ -238,12 +269,13 @@ namespace WpfProgressSpinner
                 {
                     From = currentAngle,
                     To = 0,
-                    Duration = TimeSpan.FromSeconds(currentAngle * -0.006),
+                    Duration = TimeSpan.FromSeconds(Math.Abs(currentAngle / 360) * ANIMATION_DURATION_BASIS * 2),
                     EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut },
                     SpeedRatio = AnimationSpeedRatio
                 };
+                exitRotateAnimation.Completed += (s, e) => { CheckCloseAnimatoin(); };
                 exitRotateAnimation.Freeze();
-                BeginAnimation(IndicatorRotateProperty, exitRotateAnimation, HandoffBehavior.SnapshotAndReplace);
+                BeginIndicatorAnimation(IndicatorRotateProperty, exitRotateAnimation);
             }
         }
 
@@ -251,8 +283,34 @@ namespace WpfProgressSpinner
         {
             _indeterminateAnimationRunning = false;
             _transitionAnimationRunning = false;
-            BeginAnimation(IndicatorRotateProperty, null, HandoffBehavior.SnapshotAndReplace);
-            BeginAnimation(IndeterminateAnimatorProperty, null, HandoffBehavior.SnapshotAndReplace);
+            if (null != _rotateAnimationClock)
+            {
+                _rotateAnimationClock.Controller.Stop();
+                _rotateAnimationClock.Controller.Remove();
+                //_rotateAnimationClock = null;
+            }
+            if (null != _spinAnimationClock)
+            {
+                _spinAnimationClock.Controller.Stop();
+                _spinAnimationClock.Controller.Remove();
+                //_spinAnimationClock = null;
+            }
+            ApplyAnimationClock(IndicatorRotateProperty, null, HandoffBehavior.SnapshotAndReplace);
+            ApplyAnimationClock(IndeterminateAnimatorProperty, null, HandoffBehavior.SnapshotAndReplace);
+        }
+
+        private void BeginIndicatorAnimation(DependencyProperty dp, AnimationTimeline animation, HandoffBehavior handoffBehavior = HandoffBehavior.SnapshotAndReplace)
+        {
+            var clock = animation.CreateClock();
+            if (dp == IndicatorRotateProperty)
+            {
+                _rotateAnimationClock = clock;
+            }
+            else if (dp == IndeterminateAnimatorProperty)
+            {
+                _spinAnimationClock = clock;
+            }
+            ApplyAnimationClock(dp, clock, handoffBehavior);
         }
 
         private void RotateAnimation_Completed(object sender, EventArgs e)
@@ -262,7 +320,9 @@ namespace WpfProgressSpinner
                 StopAnimation();
             }
             else if (_indeterminateAnimationRunning)
-                BeginAnimation(IndicatorRotateProperty, _rotateAnimation, HandoffBehavior.SnapshotAndReplace);
+            {
+                BeginIndicatorAnimation(IndicatorRotateProperty, _rotateAnimation);
+            }
         }
 
         private void SpinAnimation_Completed(object sender, EventArgs e)
@@ -274,7 +334,7 @@ namespace WpfProgressSpinner
             else if (_indeterminateAnimationRunning)
             {
                 // Continue the spin animation
-                BeginAnimation(IndeterminateAnimatorProperty, _spinAnimation, HandoffBehavior.SnapshotAndReplace);
+                BeginIndicatorAnimation(IndeterminateAnimatorProperty, _spinAnimation);
             }
             else
             {
@@ -312,7 +372,7 @@ namespace WpfProgressSpinner
                     exitSpinAnimation = new PointAnimationUsingPath
                     {
                         PathGeometry = exitSpinAnimationPath,
-                        Duration = TimeSpan.FromSeconds(1.35),
+                        Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS),
                         AccelerationRatio = 0.2,
                         DecelerationRatio = 0.4,
                         SpeedRatio = AnimationSpeedRatio,
@@ -324,7 +384,7 @@ namespace WpfProgressSpinner
                     {
                         From = new Point(0, 0.1),
                         To = new Point(0, targetRatio),
-                        Duration = TimeSpan.FromSeconds(Math.Abs(targetRatio - 0.1) + 0.35),
+                        Duration = TimeSpan.FromSeconds(Math.Abs(targetRatio - 0.1) * ANIMATION_DURATION_BASIS),
                         AccelerationRatio = 0.1,
                         DecelerationRatio = 0.4,
                         SpeedRatio = AnimationSpeedRatio,
@@ -335,12 +395,15 @@ namespace WpfProgressSpinner
                     if (!IsIndeterminate)
                     {
                         _transitionAnimationRunning = false;
+
+                        CheckCloseAnimatoin();
+
                         if (Value != SmoothValue)
                             BeginSmoothValueAnimation(SmoothValue);
                     }
                 };
                 exitSpinAnimation.Freeze();
-                BeginAnimation(IndeterminateAnimatorProperty, exitSpinAnimation, HandoffBehavior.SnapshotAndReplace);
+                BeginIndicatorAnimation(IndeterminateAnimatorProperty, exitSpinAnimation, HandoffBehavior.SnapshotAndReplace);
             }
         }
 
@@ -364,26 +427,61 @@ namespace WpfProgressSpinner
             }
         }
 
+        private void CheckOpenAnimation()
+        {
+            if (EnableOpenCloseAnimation)
+            {
+                var scaleInAnimation = new DoubleAnimation
+                {
+                    To = 1.0,
+                    Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS / 2),
+                    EasingFunction = new PowerEase
+                    {
+                        EasingMode = EasingMode.EaseInOut,
+                    },
+                    SpeedRatio = AnimationSpeedRatio
+                };
+                scaleInAnimation.Freeze();
+                BeginAnimation(CircleScaleProperty, scaleInAnimation);
+            }
+        }
+
+        private void CheckCloseAnimatoin()
+        {
+            if (ProgressState == ProgressState.Completed && EnableOpenCloseAnimation)
+            {
+                if (_spinAnimationClock != null && _rotateAnimationClock != null)
+                if (_spinAnimationClock.CurrentState == ClockState.Filling && _rotateAnimationClock.CurrentState == ClockState.Filling)
+                {
+                    var scaleOutAnimation = new DoubleAnimation
+                    {
+                        To = 0,
+                        Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS / 2),
+                        EasingFunction = new BackEase
+                        {
+                            Amplitude = 0.5,
+                            EasingMode = EasingMode.EaseIn,
+                        },
+                        SpeedRatio = AnimationSpeedRatio
+                    };
+                    //scaleOutAnimation.Completed += (s, e) => { Visibility = Visibility.Collapsed; };
+                    scaleOutAnimation.Freeze();
+                    BeginAnimation(CircleScaleProperty, scaleOutAnimation);
+                }
+            }
+        }
+
         private static void ProgressStateChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
             ProgressSpinner source = (ProgressSpinner)d;
 
-            var currentState = (ProgressState)e.NewValue;
+            var newState = (ProgressState)e.NewValue;
 
             // Set [IsIndeterminate] dependency property
-            source.SetValue(IsIndeterminatePropertyKey, ProgressState.Indeterminate == currentState);
+            source.SetValue(IsIndeterminatePropertyKey, ProgressState.Indeterminate == newState);
 
-            var isNoProgress = ProgressState.None == currentState;
-            source.SetValue(IsNoProgressPropertyKey, isNoProgress);
+            source.SetValue(IsProgressNonePropertyKey, ProgressState.None == newState);
 
-            if (source._indicator != null)
-            {
-                if (isNoProgress)
-                    source._indicator.Visibility = Visibility.Collapsed;
-                else
-                    source._indicator.Visibility = Visibility.Visible;
-            }
-                
             // Switch the required animation state according to changes in [ProgressState]
             source.UpdateAnimation();
         }
@@ -482,6 +580,14 @@ namespace WpfProgressSpinner
         {
             base.OnApplyTemplate();
 
+            var track = GetTemplateChild(TrackTemplateName);
+            if (track != null)
+            {
+                _track = (FrameworkElement)track;
+                _track.RenderTransformOrigin = new Point(0.5, 0.5);
+                _track.RenderTransform = _scaleTransform;
+            }
+
             // Apply some bindings to [PART_Indicator]
             var indicator = GetTemplateChild(IndicatorTemplateName);
             if (indicator != null)
@@ -534,13 +640,13 @@ namespace WpfProgressSpinner
             DependencyProperty.RegisterReadOnly("IsIndeterminate", typeof(bool),
                     typeof(ProgressSpinner), new FrameworkPropertyMetadata(_defaultState == ProgressState.Indeterminate));
 
-        public bool IsNoProgress
+        public bool IsProgressNone
         {
-            get { return (bool)GetValue(IsNoProgressPropertyKey.DependencyProperty); }
+            get { return (bool)GetValue(IsProgressNonePropertyKey.DependencyProperty); }
         }
 
-        private static readonly DependencyPropertyKey IsNoProgressPropertyKey =
-            DependencyProperty.RegisterReadOnly("IsNoProgress", typeof(bool),
+        private static readonly DependencyPropertyKey IsProgressNonePropertyKey =
+            DependencyProperty.RegisterReadOnly("IsProgressNone", typeof(bool),
                     typeof(ProgressSpinner), new FrameworkPropertyMetadata(_defaultState == ProgressState.None));
 
         public double AnimationSpeedRatio
@@ -552,13 +658,49 @@ namespace WpfProgressSpinner
         public static readonly DependencyProperty AnimationSpeedRatioProperty =
             DependencyProperty.Register("AnimationSpeedRatio",
                 typeof(double), typeof(ProgressSpinner), new FrameworkPropertyMetadata(
-                    1.0, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, null, coerceValueCallback: (d, baseValue) =>
+                    1.0, 
+                    propertyChangedCallback: (d, e) =>
+                    {
+                        var source = (ProgressSpinner)d;
+                        if (source._spinAnimationClock != null)
+                            source._spinAnimationClock.Controller.SpeedRatio = (double)e.NewValue;
+
+                        if (source._rotateAnimationClock != null)
+                            source._rotateAnimationClock.Controller.SpeedRatio = (double)e.NewValue;
+                    },
+                    coerceValueCallback: (d, baseValue) =>
                     {
                         if ((double)baseValue > 0.1)
                             return baseValue;
                         else
                             return 0.1;
                     }));
+
+        public double CircleScale
+        {
+            get { return (double)GetValue(CircleScaleProperty); }
+            set { SetValue(CircleScaleProperty, value); }
+        }
+
+        public static readonly DependencyProperty CircleScaleProperty =
+            DependencyProperty.Register("CircleScale",
+                typeof(double), typeof(ProgressSpinner), new FrameworkPropertyMetadata(
+                    1.0, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, 
+                    propertyChangedCallback: (d, e) =>
+                    {
+                        var source = (ProgressSpinner)d;
+                        source._scaleTransform.ScaleX = (double)e.NewValue;
+                        source._scaleTransform.ScaleY = (double)e.NewValue;
+                    }, 
+                    coerceValueCallback: (d, baseValue) =>
+                    {
+                        if ((double)baseValue > 0.0)
+                            return baseValue;
+                        else
+                            return 0.0;
+                    }
+                )
+            );
 
         public double CircleThickness
         {

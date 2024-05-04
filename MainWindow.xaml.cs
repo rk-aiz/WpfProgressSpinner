@@ -46,6 +46,9 @@ namespace WpfProgressSpinner
                     case ProgressState.Indeterminate:
                         vm.ProgressState = ProgressState.Normal;
                         break;
+                    case ProgressState.Normal:
+                        vm.ProgressState = ProgressState.Completed;
+                        break;
                     default:
                         vm.ProgressState = ProgressState.None;
                         break;
