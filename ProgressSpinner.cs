@@ -34,38 +34,19 @@ namespace WpfProgressSpinner
 
         #region Data
 
-        private const double ANIMATION_DURATION_BASIS = 1.35;
+        private const double ANIMATION_DURATION_BASIS = 1.5;
 
         private const string TrackTemplateName = "PART_Track";
         private const string IndicatorTemplateName = "PART_Indicator";
         private static ProgressState _defaultState = ProgressState.None;
 
-        //private RotateTransform _indicatorRotation;
         private ScaleTransform _scaleTransform = new ScaleTransform();
-
-        private AnimationTimeline _spinAnimation;
-        private AnimationTimeline _rotateAnimation;
-
-        private AnimationClock _rotateAnimationClock;
-        private AnimationClock _spinAnimationClock;
-
-        private static PathGeometry _spinAnimationPath;
+        private AnimationClock _indicatorAnimationClock;
 
         private FrameworkElement _track;
         private FrameworkElement _indicator;
 
         #endregion Data
-
-        private double ProgressRatio
-        {
-            get { return Maximum <= Minimum ? 1.0 : (Value - Minimum) / (Maximum - Minimum); }
-        }
-
-        private bool RunningTransitionAnimation
-        {
-            get { return _transitionAnimationRunning; }
-        }
-
 
         static ProgressSpinner()
         {
@@ -91,10 +72,6 @@ namespace WpfProgressSpinner
 
             // Create a [PathGeometry] for [PointAnimationgUsingPath]
             // It is the base curve for the spinner arc animation calculations.
-            _spinAnimationPath = PathGeometry.CreateFromGeometry(
-                Geometry.Parse("M 0 0.1 L 0 0.65 C 0.001 0.898 0.126 0.927 0.247 0.954 C 0.394 0.988 0.43 0.995 0.61 1.038 C 0.719 1.062 0.846 1.101 1 1.1")
-            );
-            _spinAnimationPath.Freeze();
         }
 
         public ProgressSpinner()
@@ -105,32 +82,8 @@ namespace WpfProgressSpinner
                 Mode = BindingMode.OneWay,
             };
 
-            // Animation of a circular bar stretching and shrinking and spinning
-            _spinAnimation = new PointAnimationUsingPath
-            {
-                PathGeometry = _spinAnimationPath,
-                Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS),
-                AccelerationRatio = 0.2,
-                DecelerationRatio = 0.4,
-            };
-            //BindingOperations.SetBinding(_spinAnimation, Timeline.SpeedRatioProperty, animationSpeedBinding);
-            _spinAnimation.Completed += SpinAnimation_Completed;
-            //Timeline.SetDesiredFrameRate(_spinAnimation, 60);
-
-            // RotateTransform Animation
-            _rotateAnimation = new DoubleAnimation
-            {
-                From = 0,
-                To = 360,
-                Duration = TimeSpan.FromSeconds(3),
-            };
-            //BindingOperations.SetBinding(_rotateAnimation, Timeline.SpeedRatioProperty, animationSpeedBinding);
-            _rotateAnimation.Completed += RotateAnimation_Completed;
-            //Timeline.SetDesiredFrameRate(_rotateAnimation, 60);
-
             Loaded += (s, e) =>
             {
-                UpdateIndicator();
                 UpdateAnimation();
             };
 
@@ -138,336 +91,121 @@ namespace WpfProgressSpinner
             {
                 if ((bool)e.NewValue)
                 {
-                    UpdateIndicator();
                     UpdateAnimation();
-                }
-                /*else
-                {
-                    StopAnimation();
-                }*/
-            };
-        }
-
-        private void UpdateIndicator()
-        {
-            double startPointRatio;
-            double endPointRatio;
-            if (IsIndeterminate || RunningTransitionAnimation)
-            {
-                startPointRatio = IndicatorAnimator.X;
-                endPointRatio = IndicatorAnimator.Y;
-
-                if (startPointRatio > endPointRatio)
-                {
-                    startPointRatio = endPointRatio;
-                }
-            }
-            else
-            {
-                startPointRatio = 0;
-                endPointRatio = ProgressRatio;
-            }
-
-            SetCurrentValue(IndicatorCompositorProperty, new Point(startPointRatio, endPointRatio));
-        }
-
-        private bool _indeterminateAnimationRunning = false;
-        private bool _transitionAnimationRunning = false;
-        private void UpdateAnimation()
-        {
-            if (IsProgressNone)
-            {
-                if (_indicator != null)
-                {
-                    StopAnimation();
-                    _indicator.Visibility = Visibility.Collapsed;
-                }
-            }
-            else
-            {
-                if (_indicator != null)
-                    _indicator.Visibility = Visibility.Visible;
-            }
-
-            if (ProgressState == ProgressState.Normal || IsIndeterminate)
-            {
-                CheckOpenAnimation();
-            }
-            else if (ProgressState == ProgressState.Completed)
-            {
-                CheckCloseAnimatoin();
-            }
-
-            if (IsIndeterminate)
-            {
-                if (IsVisible && !_indeterminateAnimationRunning) {
-                    var currentRatio = ProgressRatio;
-                    var enterDuration = TimeSpan.FromSeconds((ANIMATION_DURATION_BASIS / 2 * Math.Abs(currentRatio - 1.1)) + (ANIMATION_DURATION_BASIS / 2));
-
-                    // Create a transition, based on the current value
-                    PathGeometry enterAnimationPath = new PathGeometry {
-                        Figures = new PathFigureCollection(1)
-                        {
-                            new PathFigure
-                            {
-                                StartPoint = new Point(0, currentRatio),
-                                Segments = new PathSegmentCollection(1)
-                                {
-                                    new PolyBezierSegment
-                                    {
-                                        Points = new PointCollection(3)
-                                        {
-                                            new Point(0, 1.1),
-                                            new Point(0, 1.1),
-                                            new Point(1, 1.1)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    };
-                    enterAnimationPath.Freeze();
-
-                    PointAnimationUsingPath enterSpinAnimation = new PointAnimationUsingPath
-                    {
-                        PathGeometry = enterAnimationPath,
-                        Duration = enterDuration,
-                        AccelerationRatio = 0.4,
-                        DecelerationRatio = 0.4,
-                        SpeedRatio = AnimationSpeedRatio
-                    };
-
-                    enterSpinAnimation.Completed += SpinAnimation_Completed;
-                    enterSpinAnimation.Freeze();
-                    BeginIndicatorAnimation(IndeterminateAnimatorProperty, enterSpinAnimation, HandoffBehavior.SnapshotAndReplace);
-
-                    // Create a transition to a continuous rotate animation
-                    var enterRotateAnimation = new DoubleAnimation
-                    {
-                        To = 360,
-                        Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS * 3 * Math.Abs((IndicatorRotate - 360) / 360) + (ANIMATION_DURATION_BASIS / 2)),
-                        EasingFunction = new PowerEase { EasingMode = EasingMode.EaseIn },
-                        SpeedRatio = AnimationSpeedRatio
-                    };
-                    enterRotateAnimation.Completed += RotateAnimation_Completed;
-                    BeginIndicatorAnimation(IndicatorRotateProperty, enterRotateAnimation);
-
-                    _transitionAnimationRunning = false;
-                    _indeterminateAnimationRunning = true;
-
-                    CheckOpenAnimation();
-                }
-            }
-            else if (_indeterminateAnimationRunning)
-            {
-                _indeterminateAnimationRunning = false;
-                _transitionAnimationRunning = true;
-
-                // Create a transition to animate RotateTransform to initial value
-                var currentAngle = IndicatorRotate - 360;
-                var exitRotateAnimation = new DoubleAnimation
-                {
-                    From = currentAngle,
-                    To = 0,
-                    Duration = TimeSpan.FromSeconds(Math.Abs(currentAngle / 360) * ANIMATION_DURATION_BASIS * 2),
-                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut },
-                    SpeedRatio = AnimationSpeedRatio
-                };
-                exitRotateAnimation.Completed += (s, e) => { CheckCloseAnimatoin(); };
-                exitRotateAnimation.Freeze();
-                BeginIndicatorAnimation(IndicatorRotateProperty, exitRotateAnimation);
-            }
-        }
-
-        private void StopAnimation()
-        {
-            _indeterminateAnimationRunning = false;
-            _transitionAnimationRunning = false;
-            if (null != _rotateAnimationClock)
-            {
-                _rotateAnimationClock.Controller.Stop();
-                _rotateAnimationClock.Controller.Remove();
-                //_rotateAnimationClock = null;
-            }
-            if (null != _spinAnimationClock)
-            {
-                _spinAnimationClock.Controller.Stop();
-                _spinAnimationClock.Controller.Remove();
-                //_spinAnimationClock = null;
-            }
-            ApplyAnimationClock(IndicatorRotateProperty, null, HandoffBehavior.SnapshotAndReplace);
-            ApplyAnimationClock(IndeterminateAnimatorProperty, null, HandoffBehavior.SnapshotAndReplace);
-        }
-
-        private void BeginIndicatorAnimation(DependencyProperty dp, AnimationTimeline animation, HandoffBehavior handoffBehavior = HandoffBehavior.SnapshotAndReplace)
-        {
-            var clock = animation.CreateClock();
-            if (dp == IndicatorRotateProperty)
-            {
-                _rotateAnimationClock = clock;
-            }
-            else if (dp == IndeterminateAnimatorProperty)
-            {
-                _spinAnimationClock = clock;
-            }
-            ApplyAnimationClock(dp, clock, handoffBehavior);
-        }
-
-        private void RotateAnimation_Completed(object sender, EventArgs e)
-        {
-            if (!IsVisible)
-            {
-                StopAnimation();
-            }
-            else if (_indeterminateAnimationRunning)
-            {
-                BeginIndicatorAnimation(IndicatorRotateProperty, _rotateAnimation);
-            }
-        }
-
-        private void SpinAnimation_Completed(object sender, EventArgs e)
-        {
-            if (!IsVisible)
-            {
-                StopAnimation();
-            }
-            else if (_indeterminateAnimationRunning)
-            {
-                // Continue the spin animation
-                BeginIndicatorAnimation(IndeterminateAnimatorProperty, _spinAnimation);
-            }
-            else
-            {
-                _transitionAnimationRunning = true;
-                var targetRatio = ProgressRatio;
-
-                // Create a transition of animate the indicator to current value
-                AnimationTimeline exitSpinAnimation;
-                if (targetRatio < 0.1) // If ProgressRatio is less than 0.1, one additional spin animation is performed
-                {
-                    PathGeometry exitSpinAnimationPath = new PathGeometry
-                    {
-                        Figures = new PathFigureCollection(1)
-                        {
-                            new PathFigure
-                            {
-                                StartPoint = new Point(0, 0.1),
-                                Segments = new PathSegmentCollection(1)
-                                {
-                                    new PolyQuadraticBezierSegment
-                                    {
-                                        Points = new PointCollection(4)
-                                        {
-                                            new Point(0, targetRatio + 0.8),
-                                            new Point(0.1, targetRatio + 0.85),
-                                            new Point(0.9, targetRatio + 0.95),
-                                            new Point(1.0, targetRatio + 1.0)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    };
-                    exitSpinAnimationPath.Freeze();
-                    exitSpinAnimation = new PointAnimationUsingPath
-                    {
-                        PathGeometry = exitSpinAnimationPath,
-                        Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS),
-                        AccelerationRatio = 0.2,
-                        DecelerationRatio = 0.4,
-                        SpeedRatio = AnimationSpeedRatio,
-                    };
                 }
                 else
                 {
-                    exitSpinAnimation = new PointAnimation
-                    {
-                        From = new Point(0, 0.1),
-                        To = new Point(0, targetRatio),
-                        Duration = TimeSpan.FromSeconds(Math.Abs(targetRatio - 0.1) * ANIMATION_DURATION_BASIS),
-                        AccelerationRatio = 0.1,
-                        DecelerationRatio = 0.4,
-                        SpeedRatio = AnimationSpeedRatio,
-                    };
+                    StopIndicatorAnimation();
                 }
+            };
+        }
 
-                exitSpinAnimation.Completed += (s, _) => {
-                    if (!IsIndeterminate)
-                    {
-                        _transitionAnimationRunning = false;
 
-                        CheckCloseAnimatoin();
+        private void UpdateIndicator()
+        {
+            SetCurrentValue(ProgressRatioProperty, Maximum <= Minimum ? 1.0 : (Value - Minimum) / (Maximum - Minimum));
 
-                        if (Value != SmoothValue)
-                            BeginSmoothValueAnimation(SmoothValue);
-                    }
-                };
-                exitSpinAnimation.Freeze();
-                BeginIndicatorAnimation(IndeterminateAnimatorProperty, exitSpinAnimation, HandoffBehavior.SnapshotAndReplace);
+            if (IsIndeterminate)
+                return;
+
+            else
+            {
+                SetCurrentValue(IndicatorCompositorProperty, new Rect(0, ProgressRatio, 0, 0));
             }
+        }
+
+        private bool _runningAnimation = false;
+        private void UpdateAnimation()
+        {
+            if (IsIndeterminate && IsVisible)
+            {
+                var spinAnimation = new RectAnimationUsingKeyFrames
+                {
+                    RepeatBehavior = RepeatBehavior.Forever,
+                    Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS * 2),
+                    KeyFrames = new RectKeyFrameCollection
+                    {
+                        new DiscreteRectKeyFrame(new Rect(0, 0.1, 0, 1), KeyTime.FromPercent(0)),
+                        new SpinnerKeyFrame(new Rect(0.1, 1.0,  90, 1), KeyTime.FromPercent(0.25), 1),
+                        new SpinnerKeyFrame(new Rect(1.0, 1.1, 180, 1), KeyTime.FromPercent(0.50), 0),
+                        new SpinnerKeyFrame(new Rect(1.1, 2.0, 270, 1), KeyTime.FromPercent(0.75), 1),
+                        new SpinnerKeyFrame(new Rect(2.0, 2.1, 360, 1), KeyTime.FromPercent(1.00), 0),
+                    },
+                };
+                spinAnimation.Freeze();
+                BeginIndicatorAnimation(spinAnimation);
+
+                _runningAnimation = true;
+            }
+            else if (_runningAnimation)
+            {
+                _runningAnimation = false;
+
+                double rStart = (IndicatorCompositor.X + (IndicatorCompositor.Width / 360.0));
+                double rEnd = (IndicatorCompositor.Y + (IndicatorCompositor.Width / 360.0));
+
+                double sFactor = Math.Ceiling(rStart);
+                rStart -= sFactor;
+                rEnd -= sFactor;
+
+                TimeSpan duration;
+                if (Math.Abs(rStart) > Math.Abs(rEnd))
+                    duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS * Math.Abs(rStart));
+                else
+                    duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS * Math.Abs(rEnd));
+
+                var transitionAnimation = new RectAnimation
+                {
+                    Duration = duration,
+                    From = new Rect(rStart, rEnd, 0, 1),
+                    To = new Rect(0, ProgressRatio, 0, 0),
+                };
+                transitionAnimation.Freeze();
+                BeginIndicatorAnimation(transitionAnimation);
+                
+            }
+            else
+            {
+                UpdateIndicator();
+            }
+        }
+
+        private void StopIndicatorAnimation()
+        {
+            if (null != _indicatorAnimationClock)
+            {
+                _indicatorAnimationClock.Controller.Stop();
+                _indicatorAnimationClock.Controller.Remove();
+            }
+            ApplyAnimationClock(IndicatorCompositorProperty, null, HandoffBehavior.SnapshotAndReplace);
+        }
+
+        private void BeginIndicatorAnimation(AnimationTimeline animation, HandoffBehavior handoffBehavior = HandoffBehavior.SnapshotAndReplace)
+        {
+            if (null != _indicatorAnimationClock)
+                StopIndicatorAnimation();
+
+            AnimationClock clock = animation.CreateClock();
+            clock.Controller.SpeedRatio = AnimationSpeedRatio;
+            ApplyAnimationClock(IndicatorCompositorProperty, clock, handoffBehavior);
+
+            _indicatorAnimationClock = clock;
         }
 
         private void BeginSmoothValueAnimation(double value)
         {
-            if (!RunningTransitionAnimation)
+            if (IsIndeterminate)
             {
-                if (IsIndeterminate)
-                {
-                    SetCurrentValue(ValueProperty, value);
-                }
-                else
-                {
-                    var valueAnimation = new DoubleAnimation
-                    {
-                        To = value,
-                        Duration = TimeSpan.FromMilliseconds(500),
-                    };
-                    BeginAnimation(ValueProperty, valueAnimation, HandoffBehavior.SnapshotAndReplace);
-                }
+                SetCurrentValue(ValueProperty, value);
             }
-        }
-
-        private void CheckOpenAnimation()
-        {
-            if (EnableOpenCloseAnimation)
+            else
             {
-                var scaleInAnimation = new DoubleAnimation
+                var valueAnimation = new DoubleAnimation
                 {
-                    To = 1.0,
-                    Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS / 2),
-                    EasingFunction = new PowerEase
-                    {
-                        EasingMode = EasingMode.EaseInOut,
-                    },
-                    SpeedRatio = AnimationSpeedRatio
+                    To = value,
+                    Duration = TimeSpan.FromMilliseconds(500),
                 };
-                scaleInAnimation.Freeze();
-                BeginAnimation(CircleScaleProperty, scaleInAnimation);
-            }
-        }
-
-        private void CheckCloseAnimatoin()
-        {
-            if (ProgressState == ProgressState.Completed && EnableOpenCloseAnimation)
-            {
-                if (_spinAnimationClock != null && _rotateAnimationClock != null)
-                if (_spinAnimationClock.CurrentState == ClockState.Filling && _rotateAnimationClock.CurrentState == ClockState.Filling)
-                {
-                    var scaleOutAnimation = new DoubleAnimation
-                    {
-                        To = 0,
-                        Duration = TimeSpan.FromSeconds(ANIMATION_DURATION_BASIS / 2),
-                        EasingFunction = new BackEase
-                        {
-                            Amplitude = 0.5,
-                            EasingMode = EasingMode.EaseIn,
-                        },
-                        SpeedRatio = AnimationSpeedRatio
-                    };
-                    //scaleOutAnimation.Completed += (s, e) => { Visibility = Visibility.Collapsed; };
-                    scaleOutAnimation.Freeze();
-                    BeginAnimation(CircleScaleProperty, scaleOutAnimation);
-                }
+                BeginAnimation(ValueProperty, valueAnimation, HandoffBehavior.SnapshotAndReplace);
             }
         }
 
@@ -476,11 +214,10 @@ namespace WpfProgressSpinner
             ProgressSpinner source = (ProgressSpinner)d;
 
             var newState = (ProgressState)e.NewValue;
+            var oldState = (ProgressState)e.OldValue;
 
             // Set [IsIndeterminate] dependency property
             source.SetValue(IsIndeterminatePropertyKey, ProgressState.Indeterminate == newState);
-
-            source.SetValue(IsProgressNonePropertyKey, ProgressState.None == newState);
 
             // Switch the required animation state according to changes in [ProgressState]
             source.UpdateAnimation();
@@ -568,10 +305,6 @@ namespace WpfProgressSpinner
 
             protected override Visual GetVisualChild(int index)
             {
-                /*if (index != 1)
-                {
-                    throw new ArgumentOutOfRangeException();
-                }*/
                 return _drawing;
             }
         }
@@ -594,14 +327,14 @@ namespace WpfProgressSpinner
             {
                 _indicator = (FrameworkElement)indicator;
 
-                var indicatorData = new MultiBinding
+                var indicatorBinding = new MultiBinding
                 {
                     Converter = IndicatorConverter.I
                 };
-                indicatorData.Bindings.Add(new Binding("ActualWidth") { Source = this, Mode = BindingMode.OneWay });
-                indicatorData.Bindings.Add(new Binding("CircleThickness") { Source = this, Mode = BindingMode.OneWay });
-                indicatorData.Bindings.Add(new Binding("IndicatorCompositor") { Source = this, Mode = BindingMode.OneWay });
-                indicatorData.Bindings.Add(new Binding("IndicatorRotate") { Source = this, Mode = BindingMode.OneWay });
+                indicatorBinding.Bindings.Add(new Binding("ActualWidth") { Source = this, Mode = BindingMode.OneWay });
+                indicatorBinding.Bindings.Add(new Binding("CircleThickness") { Source = this, Mode = BindingMode.OneWay });
+                indicatorBinding.Bindings.Add(new Binding("ProgressRatio") { Source = this, Mode = BindingMode.OneWay });
+                indicatorBinding.Bindings.Add(new Binding("IndicatorCompositor") { Source = this, Mode = BindingMode.OneWay });
 
                 var indicatorPen = new MultiBinding
                 {
@@ -611,7 +344,7 @@ namespace WpfProgressSpinner
                 indicatorPen.Bindings.Add(new Binding("Foreground") { Source = this, Mode = BindingMode.OneWay });
 
                 _indicator.InvalidateProperty(DrawingVisualHost.GeometryProperty);
-                _indicator.SetBinding(DrawingVisualHost.GeometryProperty, indicatorData);
+                _indicator.SetBinding(DrawingVisualHost.GeometryProperty, indicatorBinding);
 
                 _indicator.InvalidateProperty(DrawingVisualHost.PenProperty);
                 _indicator.SetBinding(DrawingVisualHost.PenProperty, indicatorPen);
@@ -640,15 +373,6 @@ namespace WpfProgressSpinner
             DependencyProperty.RegisterReadOnly("IsIndeterminate", typeof(bool),
                     typeof(ProgressSpinner), new FrameworkPropertyMetadata(_defaultState == ProgressState.Indeterminate));
 
-        public bool IsProgressNone
-        {
-            get { return (bool)GetValue(IsProgressNonePropertyKey.DependencyProperty); }
-        }
-
-        private static readonly DependencyPropertyKey IsProgressNonePropertyKey =
-            DependencyProperty.RegisterReadOnly("IsProgressNone", typeof(bool),
-                    typeof(ProgressSpinner), new FrameworkPropertyMetadata(_defaultState == ProgressState.None));
-
         public double AnimationSpeedRatio
         {
             get { return (double)GetValue(AnimationSpeedRatioProperty); }
@@ -662,11 +386,9 @@ namespace WpfProgressSpinner
                     propertyChangedCallback: (d, e) =>
                     {
                         var source = (ProgressSpinner)d;
-                        if (source._spinAnimationClock != null)
-                            source._spinAnimationClock.Controller.SpeedRatio = (double)e.NewValue;
 
-                        if (source._rotateAnimationClock != null)
-                            source._rotateAnimationClock.Controller.SpeedRatio = (double)e.NewValue;
+                        if (source._indicatorAnimationClock != null)
+                            source._indicatorAnimationClock.Controller.SpeedRatio = (double)e.NewValue;
                     },
                     coerceValueCallback: (d, baseValue) =>
                     {
@@ -736,47 +458,27 @@ namespace WpfProgressSpinner
                 typeof(double), typeof(ProgressSpinner), new PropertyMetadata(
                     (d, e) => { ((ProgressSpinner)d).BeginSmoothValueAnimation((double)e.NewValue); }));
 
-        public bool EnableOpenCloseAnimation
-        {
-            get { return (bool)GetValue(EnableOpenCloseAnimationProperty); }
-            set { SetValue(EnableOpenCloseAnimationProperty, value); }
-        }
-
-        public static readonly DependencyProperty EnableOpenCloseAnimationProperty =
-            DependencyProperty.Register("EnableOpenCloseAnimation",
-                typeof(bool), typeof(ProgressSpinner), new PropertyMetadata(true));
-
         /*** Private dependency properties ***/
 
-        private double IndicatorRotate
-        {
-            get { return (double)GetValue(IndicatorRotateProperty); }
-            set { SetValue(IndicatorRotateProperty, value); }
+        private double ProgressRatio
+{
+            get { return (double)GetValue(ProgressRatioProperty); }
+            set { SetValue(ProgressRatioProperty, value); }
         }
 
-        private static readonly DependencyProperty IndicatorRotateProperty =
-            DependencyProperty.Register("IndicatorRotate", typeof(double), typeof(ProgressSpinner),
-                new FrameworkPropertyMetadata(0.0));
+        private static readonly DependencyProperty ProgressRatioProperty =
+            DependencyProperty.Register("ProgressRatio", typeof(double), typeof(ProgressSpinner));
+
+        private Rect IndicatorCompositor
+        {
+            get { return (Rect)GetValue(IndicatorCompositorProperty); }
+            set { SetValue(IndicatorCompositorProperty, value); }
+        }
 
         private static readonly DependencyProperty IndicatorCompositorProperty =
-            DependencyProperty.Register("IndicatorCompositor", typeof(Point), typeof(ProgressSpinner),
-                new FrameworkPropertyMetadata(new Point()));
-
-        private Point IndicatorAnimator
-        {
-            get { return (Point)GetValue(IndeterminateAnimatorProperty); }
-            set { SetValue(IndeterminateAnimatorProperty, value); }
-        }
-
-        private static readonly DependencyProperty IndeterminateAnimatorProperty =
-            DependencyProperty.Register("IndicatorAnimator", typeof(Point), typeof(ProgressSpinner),
-                new FrameworkPropertyMetadata(new Point(), (d, e) =>
-                {
-                    ((ProgressSpinner)d).UpdateIndicator();
-                }));
+            DependencyProperty.Register("IndicatorCompositor", typeof(Rect), typeof(ProgressSpinner));
 
         #endregion Dependency properties
-
 
         #region Converters
 
@@ -787,28 +489,34 @@ namespace WpfProgressSpinner
             {
                 double actualWidth = (double)values[0];
                 double strokeThickness = (double)values[1];
-                double ratio0 = ((Point)values[2]).X;
-                double ratio1 = ((Point)values[2]).Y;
-                double rotateOffset = (double)values[3];
+                double progressRatio = (double)values[2];
+                double ratio0 = ((Rect)values[3]).X;
+                double ratio1 = ((Rect)values[3]).Y;
+                double rotate = ((Rect)values[3]).Width;
+                double ignoreProgress = ((Rect)values[3]).Height;
+
+                if (ignoreProgress < 0)
+                    ignoreProgress = 0;
+                else if (ignoreProgress > 1)
+                    ignoreProgress = 1;
 
                 double startAngleRatio;
                 double endAngleRatio;
                 if (ratio0 < ratio1)
                 {
-                    startAngleRatio = ratio0;
-                    endAngleRatio = ratio1;
+                    startAngleRatio = ratio0 * ignoreProgress;
+                    endAngleRatio = (ratio1 * ignoreProgress) + (progressRatio * (1 - ignoreProgress));
                 }
                 else
                 {
-                    startAngleRatio = ratio1;
-                    endAngleRatio = ratio0;
+                    startAngleRatio = ratio1 * ignoreProgress;
+                    endAngleRatio = (ratio0 * ignoreProgress) + (progressRatio * (1 - ignoreProgress));
                 }
 
                 double radius;
                 if (actualWidth > strokeThickness)
                 {
-                    radius = (actualWidth - strokeThickness) / 2;
-                    
+                    radius = (actualWidth - strokeThickness) * 0.5;
                 }
                 else
                 {
@@ -817,7 +525,7 @@ namespace WpfProgressSpinner
                 Size size = new Size(radius, radius);
                 double positionOffset = actualWidth / 2;
 
-                double offsetRadians = rotateOffset / 360 * Math.PI * 2;
+                double offsetRadians = rotate / 360 * Math.PI * 2;
                 double startRadians = startAngleRatio * Math.PI * 2 + offsetRadians;
                 double endRadians = endAngleRatio * Math.PI * 2 + offsetRadians;
 
@@ -834,7 +542,7 @@ namespace WpfProgressSpinner
                 using (StreamGeometryContext ctx = geometry.Open())
                 {
                     ctx.BeginFigure(new Point(startX, startY), false, false);
-                    for (int i = 1;i < midpointCount; i++)
+                    for (int i = 1; i < midpointCount; i++)
                     {
                         double midX = radius * Math.Sin(midpointRadians * i + startRadians) + positionOffset;
                         double midY = -radius * Math.Cos(midpointRadians * i + startRadians) + positionOffset;
@@ -851,6 +559,7 @@ namespace WpfProgressSpinner
                 throw new NotImplementedException();
             }
         }
+
 
         private sealed class PenConverter : IMultiValueConverter
         {
@@ -877,5 +586,81 @@ namespace WpfProgressSpinner
         }
 
         #endregion Converters
+
+        private class SpinnerKeyFrame : RectKeyFrame
+        {
+            public int TargetPosition = -1;
+
+            public SpinnerKeyFrame(Rect value, KeyTime keyTime, int targetPosition)
+                : base(value, keyTime)
+            {
+                TargetPosition = targetPosition;
+            }
+
+            private double InterpolateDouble(double from, double to, double progress) => from + ((to - from) * progress);
+
+            protected override Rect InterpolateValueCore(Rect baseValue, double keyFrameProgress)
+            {
+                if (keyFrameProgress == 0.0)
+                {
+                    return baseValue;
+                }
+                else if (keyFrameProgress == 1.0)
+                {
+                    return Value;
+                }
+                else
+                {
+                    double easingProgress;
+                    if (keyFrameProgress < 0.5)
+                    {
+                        var x = (keyFrameProgress * 2);
+                        easingProgress = x * x / 2;
+                    }
+                    else
+                    {
+                        var x = (keyFrameProgress * 2 - 2);
+                        easingProgress = -1 * (x * x) / 2 + 1;
+                    }
+
+                    switch (TargetPosition)
+                    {
+                        case 0:
+                            return new Rect(
+                                InterpolateDouble(baseValue.X, Value.X, easingProgress),
+                                InterpolateDouble(baseValue.Y, Value.Y, keyFrameProgress),
+                                InterpolateDouble(baseValue.Width, Value.Width, keyFrameProgress),
+                                InterpolateDouble(baseValue.Height, Value.Height, keyFrameProgress)
+                        );
+                        case 1:
+                            return new Rect(
+                                InterpolateDouble(baseValue.X, Value.X, keyFrameProgress),
+                                InterpolateDouble(baseValue.Y, Value.Y, easingProgress),
+                                InterpolateDouble(baseValue.Width, Value.Width, keyFrameProgress),
+                                InterpolateDouble(baseValue.Height, Value.Height, keyFrameProgress)
+                            );
+                        case 2:
+                            return new Rect(
+                                InterpolateDouble(baseValue.X, Value.X, easingProgress),
+                                InterpolateDouble(baseValue.Y, Value.Y, easingProgress),
+                                InterpolateDouble(baseValue.Width, Value.Width, keyFrameProgress),
+                                InterpolateDouble(baseValue.Height, Value.Height, keyFrameProgress)
+                            );
+                        default:
+                            return new Rect(
+                                InterpolateDouble(baseValue.X, Value.X, keyFrameProgress),
+                                InterpolateDouble(baseValue.Y, Value.Y, keyFrameProgress),
+                                InterpolateDouble(baseValue.Width, Value.Width, keyFrameProgress),
+                                InterpolateDouble(baseValue.Height, Value.Height, keyFrameProgress)
+                            );
+                    }
+                }
+            }
+
+            protected override Freezable CreateInstanceCore()
+            {
+                return new SpinnerKeyFrame(Value, KeyTime, TargetPosition);
+            }
+        }
     }
 }
